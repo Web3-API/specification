@@ -8,20 +8,70 @@ It produces a generated code which is used to handle a number of things for the 
  - importing data types & queries from external modules.
  
 ## Data serialization
-Explain `msgpack`
+[msgpack](https://msgpack.org) is used for data serialization and deserialization between WASM and host language.
+This common data format enables representing data types correctly within both areas.
 
-## Host methods?
-## Schema binding?
+All **user (package) methods** are wrapped (new functions are generated) with arguments deserialization and serialization of the return data.
+This map of function pointers is created on [module initialization](#module-initialization). 
 
+**Objects** can be passed as arguments to functions. For those objects new map is created that contains all object's properties with
+additional methods for object serialization and deserialization.
+There are two cases that are handled:
+* generating *imported* query and object types
+* generating *user* query and object types
 
-/*
-TODO: document...
-* host import naming convention (__NAME)
-* module export naming convention (_NAME)
-* the various protocol routines including...
-  * initializing a module (https://github.com/Web3-API/prototype/blob/issue-28/packages/schema/bind/src/__tests__/cases/sanity/output/wasm-as/index.ts)
-  * query Web3APIs from module (https://github.com/Web3-API/prototype/blob/issue-28/packages/wasm/as/assembly/w3/query.ts)
-  * invoke a module's method from host (https://github.com/Web3-API/prototype/blob/issue-28/packages/wasm/as/assembly/w3/invoke.ts) & (https://github.com/Web3-API/prototype/blob/issue-28/packages/schema/bind/src/__tests__/cases/sanity/output/wasm-as/index.ts)
-  * data de/serialization (all objects passed in are named maps, see here for example: https://github.com/Web3-API/prototype/tree/issue-28/packages/schema/bind/src/__tests__/cases/sanity/output/wasm-as/CustomType)
-*/
+The following drawing demonstrates the flow and structure of a query serialization use case.
+![Query_serialization](../assets/Query_serialization.png)
 
+## Module initialization
+
+WASM module can be initialized in the client by calling the exported `_w3_init` method that each module exposes.
+This method enables the usage of wrapped functions from the module.
+
+```js
+export function _w3_init(): void {
+  w3_add_invoke("queryMethod", queryMethodWrapped);
+}
+
+```
+## Querying Web3APIs from module
+To enable instant usage of WASM module (package) functions, serialization and deseralization of the function data is already built in for each.
+This is done by wrapping each function with custom serialization.
+Those wrapped functions are added to the w3's `invokes` map that keeps track of all invokable functions and their implementations.
+
+When WASM routine invocation is performed from the host the following steps are taken:
+1. Function name and arguments are deserialized
+2. Function is retrieved from the implementation mapping and called
+3. Result or error is serialized and returned
+
+Invoke function interface:
+```
+_w3_invoke(name_size: usize, args_size: usize): bool;
+```
+
+## Methods imported from host
+All hosts imports are prefixed with two underscores (`__`) i.e. `__w3_invoke_args`.
+There are a few method implementations that should be passed from host.
+Their [WASI](https://wasi.dev/) interfaces can be found [here](TODO).
+
+```
+// Query API
+export declare function __w3_query(
+  uri_ptr: i32, uri_len: usize,
+  query_ptr: i32, query_len: usize,
+  args_ptr: i32, args_len: usize
+): bool;
+
+// Query Result
+export declare function __w3_query_result_len(): usize;
+export declare function __w3_query_result(ptr: i32): void;
+
+// Query Error
+export declare function __w3_query_error_len(): usize;
+export declare function __w3_query_error(ptr: i32): void;
+```
+
+## Exported methods from WASM modules
+All exported methods from WASM modules are prefixed with one underscore (`_`) i.e. `_w3_invoke`.
+
+Their [WASI](https://wasi.dev/) interfaces can be found [here](TODO).
